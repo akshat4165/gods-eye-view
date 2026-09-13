@@ -148,6 +148,13 @@ export const DATA_CREDITS = [
       '<a href="https://trafficnz.info/" target="_blank" rel="noopener">Waka Kotahi NZ Transport Agency</a>',
   },
   {
+    key: 'fintraffic-cctv',
+    html:
+      'Weather camera frames (Finland): ' +
+      '<a href="https://www.digitraffic.fi/en/" target="_blank" rel="noopener">Fintraffic (Digitraffic)</a> ' +
+      '(CC BY 4.0)',
+  },
+  {
     key: 'gbfs',
     html: 'Bikeshare availability: GBFS operator feeds (e.g. Austin BCycle)',
   },

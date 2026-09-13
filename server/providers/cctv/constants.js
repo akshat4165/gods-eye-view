@@ -5,9 +5,10 @@ export const DEFAULT_AUSTIN_ROWS_URL =
 /** Default cap on Austin cameras after distance-based prioritization. */
 export const DEFAULT_AUSTIN_MAX_SOURCES = 250;
 /** Global cap on total CCTV sources served by the proxy. Six packs (Austin,
- * Caltrans, TfL, Ontario, NZ) can total up to ~1350 at their individual caps,
- * so this sits at the hard ceiling below rather than an arbitrary lower one. */
-export const DEFAULT_CCTV_MAX_SOURCES = 1200;
+ * Caltrans, TfL, Ontario, NZ, Finland) can total up to ~1650 at their
+ * individual caps, so this sits at the hard ceiling below rather than an
+ * arbitrary lower one. */
+export const DEFAULT_CCTV_MAX_SOURCES = 1800;
 /** Reference point for Austin camera prioritization (Congress & 6th). */
 export const AUSTIN_DOWNTOWN = { lat: 30.2672, lon: -97.7431 };
 /** Caltrans CCTV: one JSON feed per district, identical schema statewide. */
@@ -42,6 +43,20 @@ export const NZ_TRAFFIC_CAMERAS_URL =
 export const NZ_TRAFFIC_IMAGE_ORIGIN = 'https://trafficnz.info';
 export const DEFAULT_NZ_MAX_SOURCES = 250;
 export const NZ_ANCHOR = { lat: -36.8485, lon: 174.7633 }; // Auckland
+/** Finland (Fintraffic/Digitraffic): one keyless JSON feed, nationwide weather
+ * cameras; each station lists one or more directional presets with a direct
+ * image URL. */
+export const FI_WEATHERCAM_STATIONS_URL =
+  'https://tie.digitraffic.fi/api/weathercam/v1/stations';
+// The bulk stations list omits `imageUrl`/`presentationName` per preset (only
+// a per-station detail fetch — one HTTP call per station — includes them);
+// this is the same base the detail endpoint's own `imageUrl` values use, so
+// it's built client-side from the preset id rather than doing 800+ extra
+// per-station fetches just to read back a stable, documented pattern.
+export const FI_WEATHERCAM_IMAGE_URL = (presetId) =>
+  `https://weathercam.digitraffic.fi/${encodeURIComponent(presetId)}.jpg`;
+export const DEFAULT_FI_MAX_SOURCES = 300;
+export const FI_ANCHOR = { lat: 60.1699, lon: 24.9384 }; // Helsinki
 /** Camera CATALOGS change rarely; 15 min keeps multi-megabyte upstream list refetches (Austin rows.json + 4 Caltrans districts + TfL) infrequent. Frames are fetched per-request and are unaffected. */
 export const CCTV_SOURCE_CACHE_MS = 15 * 60 * 1000;
 /** Per-provider catalog-fetch timeout. Bounds the worst-case refresh so one

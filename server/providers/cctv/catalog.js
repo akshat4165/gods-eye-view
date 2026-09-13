@@ -12,6 +12,7 @@ import {
   loadTflSourcesFromOpenData,
   loadOntarioSourcesFromOpenData,
   loadNzTrafficSourcesFromOpenData,
+  loadFinlandSourcesFromOpenData,
 } from './sources.js';
 /**
  * Load CCTV sources from a local JSON file (CCTV_SOURCES_FILE env or default).
@@ -117,23 +118,30 @@ export function createCctvCatalog({ sourceRoot = process.cwd() } = {}) {
     const ontarioEnabled =
       String(process.env.CCTV_ONTARIO_ENABLED || '1').trim() !== '0';
     const nzEnabled = String(process.env.CCTV_NZ_ENABLED || '1').trim() !== '0';
+    const fiEnabled = String(process.env.CCTV_FI_ENABLED || '1').trim() !== '0';
 
     let fromAustin = [];
     let fromCaltrans = [];
     let fromTfl = [];
     let fromOntario = [];
     let fromNz = [];
+    let fromFi = [];
     if (needsLiveSources) {
-      const [austinResult, caltransResult, tflResult, ontarioResult, nzResult] =
-        await Promise.allSettled([
-          loadAustinSourcesFromOpenData(),
-          loadCaltransSourcesFromOpenData(),
-          tflEnabled ? loadTflSourcesFromOpenData() : Promise.resolve([]),
-          ontarioEnabled
-            ? loadOntarioSourcesFromOpenData()
-            : Promise.resolve([]),
-          nzEnabled ? loadNzTrafficSourcesFromOpenData() : Promise.resolve([]),
-        ]);
+      const [
+        austinResult,
+        caltransResult,
+        tflResult,
+        ontarioResult,
+        nzResult,
+        fiResult,
+      ] = await Promise.allSettled([
+        loadAustinSourcesFromOpenData(),
+        loadCaltransSourcesFromOpenData(),
+        tflEnabled ? loadTflSourcesFromOpenData() : Promise.resolve([]),
+        ontarioEnabled ? loadOntarioSourcesFromOpenData() : Promise.resolve([]),
+        nzEnabled ? loadNzTrafficSourcesFromOpenData() : Promise.resolve([]),
+        fiEnabled ? loadFinlandSourcesFromOpenData() : Promise.resolve([]),
+      ]);
       fromAustin =
         austinResult.status === 'fulfilled' ? austinResult.value : [];
       fromCaltrans =
@@ -142,6 +150,7 @@ export function createCctvCatalog({ sourceRoot = process.cwd() } = {}) {
       fromOntario =
         ontarioResult.status === 'fulfilled' ? ontarioResult.value : [];
       fromNz = nzResult.status === 'fulfilled' ? nzResult.value : [];
+      fromFi = fiResult.status === 'fulfilled' ? fiResult.value : [];
     }
     // Live sources first so file/env overrides win on duplicate IDs (Map last-write).
     const merged = [
@@ -149,6 +158,7 @@ export function createCctvCatalog({ sourceRoot = process.cwd() } = {}) {
       ...fromCaltrans,
       ...fromTfl,
       ...fromOntario,
+      ...fromFi,
       ...fromNz,
       ...fromFile,
       ...fromEnv,
@@ -168,7 +178,7 @@ export function createCctvCatalog({ sourceRoot = process.cwd() } = {}) {
       process.env.CCTV_MAX_SOURCES || DEFAULT_CCTV_MAX_SOURCES,
     );
     const maxCount = Number.isFinite(maxRaw)
-      ? Math.max(8, Math.min(1200, Math.floor(maxRaw)))
+      ? Math.max(8, Math.min(1800, Math.floor(maxRaw)))
       : DEFAULT_CCTV_MAX_SOURCES;
     if (mergedSources.length > maxCount) {
       console.warn(

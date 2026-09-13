@@ -18,6 +18,10 @@ import {
   NZ_TRAFFIC_IMAGE_ORIGIN,
   DEFAULT_NZ_MAX_SOURCES,
   NZ_ANCHOR,
+  FI_WEATHERCAM_STATIONS_URL,
+  FI_WEATHERCAM_IMAGE_URL,
+  DEFAULT_FI_MAX_SOURCES,
+  FI_ANCHOR,
   CCTV_SOURCE_FETCH_TIMEOUT_MS,
 } from './constants.js';
 import {
@@ -559,6 +563,96 @@ export async function loadNzTrafficSourcesFromOpenData() {
   } catch (error) {
     console.warn(
       '[CCTV] NZ traffic camera download error:',
+      error?.message || error,
+    );
+    return [];
+  }
+}
+
+/**
+ * Fetch and normalize Finland (Fintraffic/Digitraffic) weather camera
+ * sources: one keyless nationwide JSON feed. Each station carries one or
+ * more directional presets with a documented direct `imageUrl`; the first
+ * in-collection preset is used as that station's camera pin (mirrors the
+ * "one pin per site" pattern used for Ontario's multi-view sites).
+ * @returns {Promise<Array<object>>}
+ */
+export async function loadFinlandSourcesFromOpenData() {
+  try {
+    const resp = await fetch(FI_WEATHERCAM_STATIONS_URL, {
+      headers: { Accept: 'application/json', 'Accept-Encoding': 'gzip' },
+      signal: AbortSignal.timeout(CCTV_SOURCE_FETCH_TIMEOUT_MS),
+    });
+    if (!resp.ok) {
+      console.warn('[CCTV] Finland weathercam download failed:', resp.status);
+      return [];
+    }
+    const data = await resp.json();
+    const stations = Array.isArray(data?.features) ? data.features : [];
+
+    const cameras = [];
+    for (const station of stations) {
+      const [lon, lat] = Array.isArray(station?.geometry?.coordinates)
+        ? station.geometry.coordinates
+        : [];
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      const props = station?.properties || {};
+      if (String(props.collectionStatus).toUpperCase() !== 'GATHERING') {
+        continue;
+      }
+      const presets = Array.isArray(props.presets) ? props.presets : [];
+      const chosen = presets.find((p) => p?.inCollection && p?.id);
+      if (!chosen) continue;
+
+      // The bulk feed carries no direction text per preset (only a per-station
+      // detail fetch does — see FI_WEATHERCAM_IMAGE_URL), so headings here are
+      // always the low-confidence hash fallback, same as an undirected camera
+      // on any other pack.
+      const cameraId = `fi-${chosen.id}`;
+      const imageUrl = FI_WEATHERCAM_IMAGE_URL(chosen.id);
+      const name =
+        props.names?.en || props.name || `Finland camera ${props.id}`;
+
+      cameras.push({
+        id: cameraId,
+        name,
+        city: props.municipality || 'Finland',
+        cityId: 'finland',
+        provider: 'Fintraffic (Digitraffic)',
+        lat,
+        lon,
+        headingDeg: fallbackHeadingFromId(cameraId),
+        headingConfidence: 'low',
+        pitchDeg: -18,
+        fovDeg: 44,
+        rangeM: 145,
+        mountHeightM: 8,
+        groundElevationM: 150,
+        feedType: 'image',
+        url: imageUrl,
+        snapshotUrl: imageUrl,
+        sourceKind: 'fintraffic-open-data',
+        license: 'Fintraffic (Digitraffic) — CC BY 4.0 weather camera frame',
+      });
+    }
+
+    const unique = Array.from(
+      new Map(cameras.map((camera) => [camera.id, camera])).values(),
+    );
+    const maxRaw = Number(
+      process.env.CCTV_FI_MAX_SOURCES || DEFAULT_FI_MAX_SOURCES,
+    );
+    const maxCount = Number.isFinite(maxRaw)
+      ? Math.max(8, Math.min(600, Math.floor(maxRaw)))
+      : DEFAULT_FI_MAX_SOURCES;
+    const prioritized = prioritizeSources(unique, maxCount, [FI_ANCHOR]);
+    console.log(
+      `[CCTV] Loaded Finland weathercam sources: ${unique.length} (using nearest ${prioritized.length})`,
+    );
+    return prioritized;
+  } catch (error) {
+    console.warn(
+      '[CCTV] Finland weathercam download error:',
       error?.message || error,
     );
     return [];
