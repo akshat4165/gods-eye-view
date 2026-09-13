@@ -136,6 +136,18 @@ export const DATA_CREDITS = [
       'Contains OS data © Crown copyright and database rights.',
   },
   {
+    key: 'ontario511-cctv',
+    html:
+      'CCTV cameras &amp; frames (Ontario, Canada): Ministry of Transportation — ' +
+      '<a href="https://511on.ca/" target="_blank" rel="noopener">511on.ca</a>',
+  },
+  {
+    key: 'nztraffic-cctv',
+    html:
+      'CCTV cameras &amp; frames (New Zealand): ' +
+      '<a href="https://trafficnz.info/" target="_blank" rel="noopener">Waka Kotahi NZ Transport Agency</a>',
+  },
+  {
     key: 'gbfs',
     html: 'Bikeshare availability: GBFS operator feeds (e.g. Austin BCycle)',
   },

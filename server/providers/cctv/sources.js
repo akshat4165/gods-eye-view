@@ -10,6 +10,14 @@ import {
   TFL_IMAGE_ORIGIN,
   DEFAULT_TFL_MAX_SOURCES,
   LONDON_CENTER,
+  ONTARIO_511_CAMERAS_URL,
+  ONTARIO_511_VIEW_URL,
+  DEFAULT_ONTARIO_MAX_SOURCES,
+  ONTARIO_ANCHOR,
+  NZ_TRAFFIC_CAMERAS_URL,
+  NZ_TRAFFIC_IMAGE_ORIGIN,
+  DEFAULT_NZ_MAX_SOURCES,
+  NZ_ANCHOR,
   CCTV_SOURCE_FETCH_TIMEOUT_MS,
 } from './constants.js';
 import {
@@ -331,6 +339,228 @@ export async function loadTflSourcesFromOpenData() {
     return prioritized;
   } catch (error) {
     console.warn('[CCTV] TfL JamCam download error:', error?.message || error);
+    return [];
+  }
+}
+
+/**
+ * Fetch Ontario 511 (MTO RWIS) traffic cameras. Keyless single JSON endpoint
+ * covering the whole province — not one city. Each site can carry several
+ * numbered `Views` (angles at the same pole); one is picked per site so the
+ * catalog stays one-feed-per-physical-camera like the other packs. A view
+ * whose Description names a direction ("Looking East") wins over an
+ * undirected one ("Looking Down") so more cameras get a real heading instead
+ * of the id-hash fallback.
+ *
+ * @returns {Promise<Array<object>>} Normalized camera source objects.
+ */
+export async function loadOntarioSourcesFromOpenData() {
+  try {
+    const resp = await fetch(ONTARIO_511_CAMERAS_URL, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(CCTV_SOURCE_FETCH_TIMEOUT_MS),
+    });
+    if (!resp.ok) {
+      console.warn('[CCTV] Ontario 511 download failed:', resp.status);
+      return [];
+    }
+    const sites = await resp.json();
+    if (!Array.isArray(sites)) return [];
+
+    const cameras = [];
+    for (const site of sites) {
+      const lat = toFiniteNumber(site?.Latitude);
+      const lon = toFiniteNumber(site?.Longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      const views = Array.isArray(site?.Views) ? site.Views : [];
+      const enabled = views.filter(
+        (v) => String(v?.Status).toLowerCase() === 'enabled' && v?.Id != null,
+      );
+      if (!enabled.length) continue;
+
+      // Prefer a view whose description carries a real direction over an
+      // undirected one ("Looking Down"); ties keep list order.
+      let chosen = null;
+      let chosenHeading = NaN;
+      for (const view of enabled) {
+        const heading = directionToHeading(view?.Description, true);
+        if (
+          !chosen ||
+          (Number.isFinite(heading) && !Number.isFinite(chosenHeading))
+        ) {
+          chosen = view;
+          chosenHeading = heading;
+          if (Number.isFinite(heading)) break;
+        }
+      }
+      const cameraId = `on511-${chosen.Id}`;
+      const hasHeading = Number.isFinite(chosenHeading);
+      const roadway = String(site?.Roadway || '').trim();
+      const location = String(site?.Location || '').trim();
+      const imageUrl = ONTARIO_511_VIEW_URL(chosen.Id);
+
+      cameras.push({
+        id: cameraId,
+        name: location || roadway || `Ontario 511 site ${site?.Id}`,
+        city: roadway || 'Ontario',
+        cityId: 'ontario',
+        provider: 'Ontario 511 (Ministry of Transportation)',
+        lat,
+        lon,
+        headingDeg: hasHeading
+          ? chosenHeading
+          : fallbackHeadingFromId(cameraId),
+        headingConfidence: hasHeading ? 'high' : 'low',
+        pitchDeg: hasHeading ? -24 : -18,
+        fovDeg: hasHeading ? 56 : 44,
+        rangeM: hasHeading ? 210 : 145,
+        mountHeightM: hasHeading ? 10 : 8,
+        groundElevationM: 150,
+        feedType: 'image',
+        url: imageUrl,
+        snapshotUrl: imageUrl,
+        sourceKind: 'ontario511-open-data',
+        license:
+          'Ontario 511 (Ministry of Transportation) — public highway camera frame',
+      });
+    }
+
+    const unique = Array.from(
+      new Map(cameras.map((camera) => [camera.id, camera])).values(),
+    );
+    const maxRaw = Number(
+      process.env.CCTV_ONTARIO_MAX_SOURCES || DEFAULT_ONTARIO_MAX_SOURCES,
+    );
+    const maxCount = Number.isFinite(maxRaw)
+      ? Math.max(8, Math.min(600, Math.floor(maxRaw)))
+      : DEFAULT_ONTARIO_MAX_SOURCES;
+    const prioritized = prioritizeSources(unique, maxCount, [ONTARIO_ANCHOR]);
+    console.log(
+      `[CCTV] Loaded Ontario 511 camera sources: ${unique.length} (using nearest ${prioritized.length})`,
+    );
+    return prioritized;
+  } catch (error) {
+    console.warn('[CCTV] Ontario 511 download error:', error?.message || error);
+    return [];
+  }
+}
+
+/** One `<camera>…</camera>` record from the NZTA XML feed, as a keyed map of
+ * its direct child tag text. Does NOT descend into the nested `<journey>` /
+ * `<journeyLeg>` blocks — those carry their own `startLatitude` etc., so a
+ * naive whole-block regex on `<latitude>`/`<longitude>` would still be safe
+ * (the nested tags are prefixed), but per-tag extraction on the block keeps
+ * this loader independent of that coincidence. */
+function parseNzCameraBlock(block) {
+  const field = (tag) => {
+    const m = new RegExp(`<${tag}>([^<]*)<\\/${tag}>`).exec(block);
+    return m ? m[1] : '';
+  };
+  return {
+    id: field('id'),
+    description: field('description'),
+    direction: field('direction'),
+    highway: field('highway'),
+    imageUrl: field('imageUrl'),
+    latitude: field('latitude'),
+    longitude: field('longitude'),
+    name: field('name'),
+    offline: field('offline'),
+    region: (() => {
+      const regionBlock = /<region>([\s\S]*?)<\/region>/.exec(block)?.[1] || '';
+      return /<name>([^<]*)<\/name>/.exec(regionBlock)?.[1] || '';
+    })(),
+    underMaintenance: field('underMaintenance'),
+  };
+}
+
+/**
+ * Fetch New Zealand (Waka Kotahi NZTA) traffic cameras. Keyless single XML
+ * endpoint covering the whole country. No JSON/XML dependency in this
+ * project, and the feed's `<camera>` records are flat (no nested tag shares
+ * a name with a top-level one — journey/journeyLeg fields are all prefixed,
+ * e.g. `startLatitude`) so a small hand-rolled block-and-tag extraction is
+ * enough; a malformed or restructured feed degrades to zero cameras rather
+ * than throwing.
+ *
+ * @returns {Promise<Array<object>>} Normalized camera source objects.
+ */
+export async function loadNzTrafficSourcesFromOpenData() {
+  try {
+    const resp = await fetch(NZ_TRAFFIC_CAMERAS_URL, {
+      headers: { Accept: 'application/xml' },
+      signal: AbortSignal.timeout(CCTV_SOURCE_FETCH_TIMEOUT_MS),
+    });
+    if (!resp.ok) {
+      console.warn('[CCTV] NZ traffic camera download failed:', resp.status);
+      return [];
+    }
+    const xml = await resp.text();
+    const blocks = xml.match(/<camera>[\s\S]*?<\/camera>/g) || [];
+
+    const cameras = [];
+    for (const block of blocks) {
+      const rec = parseNzCameraBlock(block);
+      if (!rec.id) continue;
+      if (String(rec.offline).toLowerCase() === 'true') continue;
+      if (String(rec.underMaintenance).toLowerCase() === 'true') continue;
+      const lat = toFiniteNumber(rec.latitude);
+      const lon = toFiniteNumber(rec.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      if (!rec.imageUrl.startsWith('/')) continue; // official-relative-path pin
+      const imageUrl = `${NZ_TRAFFIC_IMAGE_ORIGIN}${rec.imageUrl}`;
+
+      const cameraId = `nz-${rec.id}`;
+      const heading = directionToHeading(rec.direction, true);
+      const hasHeading = Number.isFinite(heading);
+      const label =
+        rec.name.trim() ||
+        rec.description.trim() ||
+        `${rec.highway || 'NZ'} camera ${rec.id}`;
+
+      cameras.push({
+        id: cameraId,
+        name: label,
+        city: rec.region || rec.highway || 'New Zealand',
+        cityId: 'nz',
+        provider: 'Waka Kotahi NZ Transport Agency',
+        lat,
+        lon,
+        headingDeg: hasHeading ? heading : fallbackHeadingFromId(cameraId),
+        headingConfidence: hasHeading ? 'high' : 'low',
+        pitchDeg: hasHeading ? -24 : -18,
+        fovDeg: hasHeading ? 56 : 44,
+        rangeM: hasHeading ? 210 : 145,
+        mountHeightM: hasHeading ? 10 : 8,
+        groundElevationM: 150,
+        feedType: 'image',
+        url: imageUrl,
+        snapshotUrl: imageUrl,
+        sourceKind: 'nztraffic-open-data',
+        license:
+          'Waka Kotahi NZ Transport Agency — public highway camera frame',
+      });
+    }
+
+    const unique = Array.from(
+      new Map(cameras.map((camera) => [camera.id, camera])).values(),
+    );
+    const maxRaw = Number(
+      process.env.CCTV_NZ_MAX_SOURCES || DEFAULT_NZ_MAX_SOURCES,
+    );
+    const maxCount = Number.isFinite(maxRaw)
+      ? Math.max(8, Math.min(600, Math.floor(maxRaw)))
+      : DEFAULT_NZ_MAX_SOURCES;
+    const prioritized = prioritizeSources(unique, maxCount, [NZ_ANCHOR]);
+    console.log(
+      `[CCTV] Loaded NZ traffic camera sources: ${unique.length} (using nearest ${prioritized.length})`,
+    );
+    return prioritized;
+  } catch (error) {
+    console.warn(
+      '[CCTV] NZ traffic camera download error:',
+      error?.message || error,
+    );
     return [];
   }
 }

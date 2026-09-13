@@ -10,6 +10,8 @@ import {
   loadAustinSourcesFromOpenData,
   loadCaltransSourcesFromOpenData,
   loadTflSourcesFromOpenData,
+  loadOntarioSourcesFromOpenData,
+  loadNzTrafficSourcesFromOpenData,
 } from './sources.js';
 /**
  * Load CCTV sources from a local JSON file (CCTV_SOURCES_FILE env or default).
@@ -112,27 +114,42 @@ export function createCctvCatalog({ sourceRoot = process.cwd() } = {}) {
     const tflEnabled =
       String(process.env.CCTV_TFL_ENABLED || '1').trim() !== '0';
 
+    const ontarioEnabled =
+      String(process.env.CCTV_ONTARIO_ENABLED || '1').trim() !== '0';
+    const nzEnabled = String(process.env.CCTV_NZ_ENABLED || '1').trim() !== '0';
+
     let fromAustin = [];
     let fromCaltrans = [];
     let fromTfl = [];
+    let fromOntario = [];
+    let fromNz = [];
     if (needsLiveSources) {
-      const [austinResult, caltransResult, tflResult] =
+      const [austinResult, caltransResult, tflResult, ontarioResult, nzResult] =
         await Promise.allSettled([
           loadAustinSourcesFromOpenData(),
           loadCaltransSourcesFromOpenData(),
           tflEnabled ? loadTflSourcesFromOpenData() : Promise.resolve([]),
+          ontarioEnabled
+            ? loadOntarioSourcesFromOpenData()
+            : Promise.resolve([]),
+          nzEnabled ? loadNzTrafficSourcesFromOpenData() : Promise.resolve([]),
         ]);
       fromAustin =
         austinResult.status === 'fulfilled' ? austinResult.value : [];
       fromCaltrans =
         caltransResult.status === 'fulfilled' ? caltransResult.value : [];
       fromTfl = tflResult.status === 'fulfilled' ? tflResult.value : [];
+      fromOntario =
+        ontarioResult.status === 'fulfilled' ? ontarioResult.value : [];
+      fromNz = nzResult.status === 'fulfilled' ? nzResult.value : [];
     }
     // Live sources first so file/env overrides win on duplicate IDs (Map last-write).
     const merged = [
       ...fromAustin,
       ...fromCaltrans,
       ...fromTfl,
+      ...fromOntario,
+      ...fromNz,
       ...fromFile,
       ...fromEnv,
     ];
