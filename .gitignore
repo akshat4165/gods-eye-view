@@ -12,3 +12,12 @@ output/
 3d-models/
 pinokio/ENVIRONMENT
 pinokio/.installed
+
+# Local-only additions
+.env.*
+!.env.example
+.claude/settings.local.json
+.vite/
+coverage/
+*.pem
+*.key
