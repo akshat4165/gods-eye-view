@@ -1,6 +1,8 @@
 import { StyleManager } from '../ui.js';
 import { flyToAustin } from '../camera.js';
 import { initCockpitCloudEffects } from '../cockpitCloudEffects.js';
+import { bindThemePicker } from '../ui/themes.js';
+import { createTopView } from '../ui/topView.js';
 
 /** Construct the existing controls and camera presentation. */
 export function createStandaloneControls({
@@ -24,6 +26,18 @@ export function createStandaloneControls({
   const cockpitCloudEffects = initCockpitCloudEffects(viewer);
   defer(() => cockpitCloudEffects?.destroy());
 
+  const themePicker = bindThemePicker({
+    button: document.getElementById('theme-btn'),
+  });
+  defer(() => themePicker.destroy());
+  const topView = createTopView({
+    viewer,
+    button: document.getElementById('top-view-btn'),
+    orbitController: styleManager.orbitController,
+    notify: (message) => styleManager._showToast(message),
+  });
+  defer(() => topView.destroy());
+
   // If no share link state, do default fly-to Austin
   if (!styleManager.hasShareState) {
     loaderStatus.textContent = 'Flying to Austin, TX...';
@@ -32,5 +46,5 @@ export function createStandaloneControls({
     loaderStatus.textContent = 'Restoring shared view...';
   }
 
-  return { styleManager, weatherEffects, cockpitCloudEffects };
+  return { styleManager, weatherEffects, cockpitCloudEffects, topView };
 }

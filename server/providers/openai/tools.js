@@ -402,9 +402,11 @@ const GEV_REALTIME_TOOLS = [
             'bing-labels',
             'esri-imagery',
             'osm',
+            'streets',
+            'streets-dark',
           ],
           description:
-            'photoreal = Google 3D. Use bing-aerial only when the user explicitly says "Bing aerial" — "satellite(s)" never means a basemap; only the explicit phrase "Esri" / "Esri imagery" means esri-imagery.',
+            'photoreal = Google 3D. Use bing-aerial only when the user explicitly says "Bing aerial" — "satellite(s)" never means a basemap; only the explicit phrase "Esri" / "Esri imagery" means esri-imagery. streets = clean Google/Apple-Maps-style street map; streets-dark = its dark variant.',
         },
       },
       required: ['stack'],

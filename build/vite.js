@@ -1,4 +1,5 @@
 import cesium from 'vite-plugin-cesium';
+import { themeColorsPlugin } from './themeColors.js';
 
 /** Build browser assets with explicit inputs; never load environment or providers. */
 export function createBrowserViteConfig({
@@ -9,7 +10,7 @@ export function createBrowserViteConfig({
   port = 4173,
 } = {}) {
   return {
-    plugins: [cesium(), ...plugins],
+    plugins: [cesium(), themeColorsPlugin(), ...plugins],
     server: {
       host: host || 'localhost',
       port: parseInt(port, 10) || 4173,

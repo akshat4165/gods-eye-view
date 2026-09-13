@@ -54,9 +54,32 @@ export const MAP_STACKS = [
     kind: 'osm',
     requiresIon: false,
   },
+  {
+    id: 'streets',
+    label: 'Streets',
+    shortLabel: 'Streets',
+    kind: 'esri-basemap',
+    service: 'World_Street_Map',
+    requiresIon: false,
+  },
+  {
+    id: 'streets-dark',
+    label: 'Streets Dark',
+    shortLabel: 'Dark',
+    kind: 'esri-basemap',
+    service: 'Canvas/World_Dark_Gray_Base',
+    labelsService: 'Canvas/World_Dark_Gray_Reference',
+    requiresIon: false,
+  },
 ];
 
 const DEFAULT_OSM_CREDIT = '© OpenStreetMap contributors';
+
+// Esri street basemaps — Google/Apple-Maps-style cartography from the same
+// keyless ArcGIS Online tile services (and attribution rules) as World Imagery.
+// The dark canvas ships its labels as a separate reference layer drawn on top.
+const ESRI_SERVICES_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services';
+const ESRI_BASEMAP_CREDIT = 'Powered by Esri — Sources: Esri, HERE, Garmin, USGS, OpenStreetMap contributors, and the GIS User Community';
 
 // Esri World Imagery — the keyless satellite basemap and the default keyless
 // landing (a spy-satellite simulator should open on satellite imagery, not a
@@ -101,6 +124,7 @@ export class MapStackController {
     this._onError = onError;
     this._activeId = googleTileset ? initialStack : 'esri-imagery';
     this._imageryLayer = null;
+    this._labelsLayer = null;
     this._activeImageryProvider = null;
     this._removeImageryErrorListener = null;
     this._esriFallbackPending = false;
@@ -308,6 +332,10 @@ export class MapStackController {
     this._imageryLayer = new Cesium.ImageryLayer(resolution.provider);
     this._activeImageryProvider = resolution.provider;
     this.viewer.imageryLayers.add(this._imageryLayer, 0);
+    if (resolution.labelsProvider) {
+      this._labelsLayer = new Cesium.ImageryLayer(resolution.labelsProvider);
+      this.viewer.imageryLayers.add(this._labelsLayer, 1);
+    }
     this._syncEsriAttribution(resolution.effectiveStackId);
     this._watchEsriProvider(resolution, gen);
 
@@ -332,7 +360,7 @@ export class MapStackController {
   _syncEsriAttribution(activeStackId) {
     const creditDisplay = this.viewer?.scene?.frameState?.creditDisplay;
     if (!creditDisplay) return;
-    const wanted = activeStackId === 'esri-imagery';
+    const wanted = activeStackId === 'esri-imagery' || this.getStack(activeStackId)?.kind === 'esri-basemap';
     if (wanted === !!this._esriCreditShown) return;
     if (!this._esriCredit) {
       this._esriCredit = new Cesium.Credit(ESRI_ATTRIBUTION_HTML, true);
@@ -352,6 +380,7 @@ export class MapStackController {
     }
 
     let provider;
+    let labelsProvider = null;
     let effectiveStackId = stack.id;
     let fallbackMessage = null;
     if (stack.kind === 'ion') {
@@ -375,6 +404,18 @@ export class MapStackController {
         effectiveStackId = 'osm';
         fallbackMessage = 'Esri Satellite is unavailable; using OSM';
       }
+    } else if (stack.kind === 'esri-basemap') {
+      const options = { credit: ESRI_BASEMAP_CREDIT, enablePickFeatures: false };
+      provider = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
+        `${ESRI_SERVICES_URL}/${stack.service}/MapServer`,
+        options,
+      );
+      if (stack.labelsService) {
+        labelsProvider = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
+          `${ESRI_SERVICES_URL}/${stack.labelsService}/MapServer`,
+          options,
+        );
+      }
     } else if (stack.kind === 'osm') {
       provider = new Cesium.OpenStreetMapImageryProvider({
         url: 'https://tile.openstreetmap.org/',
@@ -384,7 +425,7 @@ export class MapStackController {
       throw new Error(`Unsupported map stack: ${stack.id}`);
     }
 
-    const resolution = { provider, effectiveStackId, fallbackMessage };
+    const resolution = { provider, labelsProvider, effectiveStackId, fallbackMessage };
     this._imageryProviders.set(stack.id, resolution);
     if (effectiveStackId === 'osm' && !this._imageryProviders.has('osm')) {
       this._imageryProviders.set('osm', { provider, effectiveStackId: 'osm', fallbackMessage: null });
@@ -427,6 +468,10 @@ export class MapStackController {
     if (this._removeImageryErrorListener) {
       this._removeImageryErrorListener();
       this._removeImageryErrorListener = null;
+    }
+    if (this._labelsLayer) {
+      this.viewer.imageryLayers.remove(this._labelsLayer, false);
+      this._labelsLayer = null;
     }
     if (!this._imageryLayer) return;
     this.viewer.imageryLayers.remove(this._imageryLayer, false);

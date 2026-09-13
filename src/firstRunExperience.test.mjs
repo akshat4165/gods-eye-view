@@ -659,10 +659,11 @@ test('the voice TOOL SCHEMA matches the pinned release — the mission mapping i
   // ordering while allowing source formatting. Derived from the unchanged
   // release schema before formatting (the previous source-byte pin passed).
   const block = JSON.stringify(GEV_REALTIME_TOOLS);
-  assert.equal(block.length, 26121, 'serialized tool schema length drifted');
+  assert.equal(block.length, 26231, 'serialized tool schema length drifted');
   assert.equal(
     crypto.createHash('sha256').update(block).digest('hex'),
-    '11680affb4a7aebf142642c8185b28f2ee7d523407054c5b0c3962d933b045eb',
+    '5a858cca0842501a465762369b7a1eb735cf28b947dfaeb1f0712fcd54bc0dab',
+    // Re-pinned for the streets/streets-dark set_map_stack enum values.
     'the first-run missions must ride EXISTING tools: no schema edit, no cache bust',
   );
   const instructions = fs.readFileSync(new URL('../server/providers/openai/instructions.js', import.meta.url), 'utf8');
